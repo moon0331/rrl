@@ -7,6 +7,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn import metrics
 from collections import defaultdict
 
+from tqdm import tqdm
+
 from rrl.components import BinarizeLayer
 from rrl.components import UnionLayer, LRLayer
 
@@ -14,10 +16,11 @@ TEST_CNT_MOD = 500
 
 
 class MLLP(nn.Module):
-    def __init__(self, dim_list, use_not=False, left=None, right=None, estimated_grad=False):
+    def __init__(self, dim_list, use_not=False, left=None, right=None, estimated_grad=False, threshold=0.5):
         super(MLLP, self).__init__()
 
         self.dim_list = dim_list
+        # print(self.dim_list)
         self.use_not = use_not
         self.left = left
         self.right = right
@@ -29,6 +32,8 @@ class MLLP(nn.Module):
             if i >= 4:
                 num += self.layer_list[-2].output_dim
 
+            # print(f'{i=}, {dim_list[i]=}')
+
             if i == 1:
                 layer = BinarizeLayer(dim_list[i], num, self.use_not, self.left, self.right)
                 layer_name = 'binary{}'.format(i)
@@ -36,7 +41,7 @@ class MLLP(nn.Module):
                 layer = LRLayer(dim_list[i], num)
                 layer_name = 'lr{}'.format(i)
             else:
-                layer = UnionLayer(dim_list[i], num, estimated_grad=estimated_grad)
+                layer = UnionLayer(dim_list[i], num, estimated_grad=estimated_grad, threshold=threshold)
                 layer_name = 'union{}'.format(i)
             prev_layer_dim = layer.output_dim
             self.add_module(layer_name, layer)
@@ -77,7 +82,7 @@ class MyDistributedDataParallel(torch.nn.parallel.DistributedDataParallel):
 
 class RRL:
     def __init__(self, dim_list, device_id, use_not=False, is_rank0=False, log_file=None, writer=None, left=None,
-                 right=None, save_best=False, estimated_grad=False, save_path=None, distributed=True):
+                 right=None, save_best=False, estimated_grad=False, save_path=None, distributed=False, threshold=0.5): #distributed=True
         super(RRL, self).__init__()
         self.dim_list = dim_list
         self.use_not = use_not
@@ -99,7 +104,7 @@ class RRL:
                 logging.basicConfig(level=logging.DEBUG, filename=log_file, filemode='w', format=log_format)
         self.writer = writer
 
-        self.net = MLLP(dim_list, use_not=use_not, left=left, right=right, estimated_grad=estimated_grad)
+        self.net = MLLP(dim_list, use_not=use_not, left=left, right=right, estimated_grad=estimated_grad, threshold=threshold)
 
         self.net.cuda(self.device_id)
         if distributed:
@@ -150,7 +155,8 @@ class RRL:
         avg_batch_loss_mllp = 0.0
         avg_batch_loss_rrl = 0.0
         epoch_histc = defaultdict(list)
-        for epo in range(epoch):
+        for epo in tqdm(range(epoch)):
+            # print(epo)
             optimizer = self.exp_lr_scheduler(optimizer, epo, init_lr=lr, lr_decay_rate=lr_decay_rate,
                                               lr_decay_epoch=lr_decay_epoch)
             epoch_loss_mllp = 0.0
@@ -277,6 +283,8 @@ class RRL:
             logging.info('On {} Set:\nPerformance of  RRL Model: \n{}\n{}'.format(
                 set_name, metrics.confusion_matrix(y_true, y_pred_b_arg), metrics.classification_report(y_true, y_pred_b_arg)))
             logging.info('-' * 60)
+            if set_name == 'Test':
+                print(set_name, accuracy_b, f1_score_b)
         return accuracy, accuracy_b, f1_score, f1_score_b
 
     def save_model(self):
@@ -285,7 +293,7 @@ class RRL:
 
     def detect_dead_node(self, data_loader=None):
         with torch.no_grad():
-            for layer in self.net.layer_list[:-1]:
+            for layer in self.net.layer_list[:-1]: # except classification layer
                 layer.node_activation_cnt = torch.zeros(layer.output_dim, dtype=torch.double, device=self.device_id)
                 layer.forward_tot = 0
             for x, y in data_loader:
@@ -306,6 +314,7 @@ class RRL:
             raise Exception("Need train_loader for the dead nodes detection.")
         if self.net.layer_list[1].node_activation_cnt is None:
             self.detect_dead_node(train_loader)
+        # self.layer.layer_list[0~-1].node_activation_cnt 는 activation된 node 수를 의미 (현재 conj(앞쪽 절반)는 너무 sparse, disj(뒤쪽 절반)는 너무 dense함. 수정 필요)
 
         bound_name = self.net.layer_list[0].get_bound_name(feature_name, mean, std)
         self.net.layer_list[1].get_rules(self.net.layer_list[0], None)
@@ -327,11 +336,11 @@ class RRL:
         if skip_connect_layer.layer_type == 'union':
             shifted_dim2id = {(k + prev_layer.output_dim): (-2, v) for k, v in skip_connect_layer.dim2id.items()}
             prev_dim2id = {k: (-1, v) for k, v in prev_layer.dim2id.items()}
-            merged_dim2id = defaultdict(lambda: -1, {**shifted_dim2id, **prev_dim2id})
+            merged_dim2id = defaultdict(lambda: -1, {**shifted_dim2id, **prev_dim2id}) #################################################################
             always_act_pos = torch.cat(
                 [always_act_pos, (skip_connect_layer.node_activation_cnt == skip_connect_layer.forward_tot)])
         else:
-            merged_dim2id = {k: (-1, v) for k, v in prev_layer.dim2id.items()}
+            merged_dim2id = {k: (-1, v) for k, v in prev_layer.dim2id.items()} ###############################################################
 
         Wl, bl = list(self.net.layer_list[-1].parameters())
         bl = torch.sum(Wl.T[always_act_pos], dim=0) + bl
@@ -348,7 +357,7 @@ class RRL:
                 marked[rid][label_id] += w
                 rid2dim[rid] = i % prev_layer.output_dim
 
-        kv_list = sorted(marked.items(), key=lambda x: max(map(abs, x[1].values())), reverse=True)
+        kv_list = sorted(marked.items(), key=lambda x: max(map(abs, x[1].values())), reverse=True) # what is this value?
         print('RID', end='\t', file=file)
         for i, ln in enumerate(label_name):
             print('{}(b={:.4f})'.format(ln, bl[i]), end='\t', file=file)

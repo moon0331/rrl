@@ -26,19 +26,20 @@ class BinarizeLayer(nn.Module):
     def __init__(self, n, input_dim, use_not=False, left=None, right=None):
         super(BinarizeLayer, self).__init__()
         self.n = n
-        self.input_dim = input_dim
+        self.input_dim = input_dim # (discrete_flen, continuous_flen)
         self.disc_num = input_dim[0]
         self.use_not = use_not
         if self.use_not:
             self.disc_num *= 2
         self.output_dim = self.disc_num + self.n * self.input_dim[1] * 2
+        # breakpoint()
         self.layer_type = 'binarization'
         self.dim2id = {i: i for i in range(self.output_dim)}
 
         self.register_buffer('left', left)
         self.register_buffer('right', right)
 
-        if self.input_dim[1] > 0:
+        if self.input_dim[1] > 0: # has continuous value
             if self.left is not None and self.right is not None:
                 cl = self.left + torch.rand(self.n, self.input_dim[1]) * (self.right - self.left)
                 cr = self.left + torch.rand(self.n, self.input_dim[1]) * (self.right - self.left)
@@ -49,13 +50,13 @@ class BinarizeLayer(nn.Module):
             self.register_buffer('cr', cr)
 
     def forward(self, x):
-        if self.input_dim[1] > 0:
+        if self.input_dim[1] > 0: # has continuous value
             x_disc, x = x[:, 0: self.input_dim[0]], x[:, self.input_dim[0]:]
             x = x.unsqueeze(-1)
             if self.use_not:
                 x_disc = torch.cat((x_disc, 1 - x_disc), dim=1)
-            return torch.cat((x_disc, Binarize.apply(x - self.cl.t()).view(x.shape[0], -1),
-                              1 - Binarize.apply(x - self.cr.t()).view(x.shape[0], -1)), dim=1)
+            return torch.cat((x_disc, Binarize.apply(x - self.cl.t()).contiguous().view(x.shape[0], -1),
+                              1 - Binarize.apply(x - self.cr.t()).contiguous().view(x.shape[0], -1)), dim=1)
         if self.use_not:
             x = torch.cat((x, 1 - x), dim=1)
         return x
@@ -87,7 +88,7 @@ class BinarizeLayer(nn.Module):
                     for j in ci:
                         if mean is not None and std is not None:
                             j = j * std[fi_name] + mean[fi_name]
-                        bound_name.append('{} {} {:.3f}'.format(fi_name, op, j))
+                        bound_name.append('{} {} {:.3f}'.format(fi_name, op, j)) # ex. 'Hb타율 > 0.330'
         return bound_name
 
 
@@ -147,13 +148,14 @@ class LRLayer(nn.Module):
 class ConjunctionLayer(nn.Module):
     """The conjunction layer is used to learn the conjunction of nodes."""
 
-    def __init__(self, n, input_dim, use_not=False, estimated_grad=False):
+    def __init__(self, n, input_dim, use_not=False, estimated_grad=False, threshold=0.5):
         super(ConjunctionLayer, self).__init__()
         self.n = n
         self.use_not = use_not
         self.input_dim = input_dim if not use_not else input_dim * 2
         self.output_dim = self.n
         self.layer_type = 'conjunction'
+        self.threshold = threshold
 
         self.W = nn.Parameter(INIT_RANGE * torch.rand(self.n, self.input_dim))
         self.Product = EstimatedProduct if estimated_grad else Product
@@ -167,7 +169,8 @@ class ConjunctionLayer(nn.Module):
     def binarized_forward(self, x):
         if self.use_not:
             x = torch.cat((x, 1 - x), dim=1)
-        Wb = Binarize.apply(self.W - THRESHOLD)
+        # Wb = Binarize.apply(self.W - THRESHOLD)
+        Wb = Binarize.apply(self.W - self.threshold)
         return torch.prod(1 - (1 - x).unsqueeze(-1) * Wb.t(), dim=1)
 
     def clip(self):
@@ -177,13 +180,14 @@ class ConjunctionLayer(nn.Module):
 class DisjunctionLayer(nn.Module):
     """The disjunction layer is used to learn the disjunction of nodes."""
 
-    def __init__(self, n, input_dim, use_not=False, estimated_grad=False):
+    def __init__(self, n, input_dim, use_not=False, estimated_grad=False, threshold=0.5):
         super(DisjunctionLayer, self).__init__()
         self.n = n
         self.use_not = use_not
         self.input_dim = input_dim if not use_not else input_dim * 2
         self.output_dim = self.n
         self.layer_type = 'disjunction'
+        self.threshold = threshold
 
         self.W = nn.Parameter(INIT_RANGE * torch.rand(self.n, self.input_dim))
         self.Product = EstimatedProduct if estimated_grad else Product
@@ -197,7 +201,8 @@ class DisjunctionLayer(nn.Module):
     def binarized_forward(self, x):
         if self.use_not:
             x = torch.cat((x, 1 - x), dim=1)
-        Wb = Binarize.apply(self.W - THRESHOLD)
+        # Wb = Binarize.apply(self.W - THRESHOLD)
+        Wb = Binarize.apply(self.W - self.threshold)
         return 1 - torch.prod(1 - x.unsqueeze(-1) * Wb.t(), dim=1)
 
     def clip(self):
@@ -209,7 +214,7 @@ def extract_rules(prev_layer, skip_connect_layer, layer, pos_shift=0):
     rules = {}
     tmp = 0
     rule_list = []
-    Wb = (layer.W > 0.5).type(torch.int).detach().cpu().numpy()
+    Wb = (layer.W > 0.5).type(torch.int).detach().cpu().numpy() # threshold?
 
     if skip_connect_layer is not None:
         shifted_dim2id = {(k + prev_layer.output_dim): (-2, v) for k, v in skip_connect_layer.dim2id.items()}
@@ -218,28 +223,29 @@ def extract_rules(prev_layer, skip_connect_layer, layer, pos_shift=0):
     else:
         merged_dim2id = {k: (-1, v) for k, v in prev_layer.dim2id.items()}
 
-    for ri, row in enumerate(Wb):
-        if layer.node_activation_cnt[ri + pos_shift] == 0 or layer.node_activation_cnt[ri + pos_shift] == layer.forward_tot:
+    for ri, row in enumerate(Wb): # ri번째 node와 연결된 weight를 살펴보자
+        if layer.node_activation_cnt[ri + pos_shift] == 0 or layer.node_activation_cnt[ri + pos_shift] == layer.forward_tot: # 노드가 죽었거나 전체 다 통과하거나
             dim2id[ri + pos_shift] = -1
+            print(ri + pos_shift, 'is dead')
             continue
         rule = {}
         bound = {}
-        if prev_layer.layer_type == 'binarization' and prev_layer.input_dim[1] > 0:
+        if prev_layer.layer_type == 'binarization' and prev_layer.input_dim[1] > 0: # 이전 layer가 binarization이고, continuous input이 있었으면
             c = torch.cat((prev_layer.cl.t().reshape(-1), prev_layer.cr.t().reshape(-1))).detach().cpu().numpy()
         for i, w in enumerate(row):
             if w > 0 and merged_dim2id[i][1] != -1:
                 if prev_layer.layer_type == 'binarization' and i >= prev_layer.disc_num:
-                    ci = i - prev_layer.disc_num
-                    bi = ci // prev_layer.n
+                    ci = i - prev_layer.disc_num # (continuous weight)해당 weight의 인덱스
+                    bi = ci // prev_layer.n # feature의 인덱스
                     if bi not in bound:
-                        bound[bi] = [i, c[ci]]
-                        rule[(-1, i)] = 1
+                        bound[bi] = [i, c[ci]] # bound[7] = [37, 660차원 벡터의[37]번째=-0.6553316]
+                        rule[(-1, i)] = 1 # rule[(-1, 37)] = 1
                     else:
                         if (ci < c.shape[0] // 2 and layer.layer_type == 'conjunction') or \
                            (ci >= c.shape[0] // 2 and layer.layer_type == 'disjunction'):
                             func = max
                         else:
-                            func = min
+                            func = min #???????
                         bound[bi][1] = func(bound[bi][1], c[ci])
                         if bound[bi][1] == c[ci]:
                             del rule[(-1, bound[bi][0])]
@@ -261,7 +267,7 @@ def extract_rules(prev_layer, skip_connect_layer, layer, pos_shift=0):
 class UnionLayer(nn.Module):
     """The union layer is used to learn the rule-based representation."""
 
-    def __init__(self, n, input_dim, use_not=False, estimated_grad=False):
+    def __init__(self, n, input_dim, use_not=False, estimated_grad=False, threshold=0.5):
         super(UnionLayer, self).__init__()
         self.n = n
         self.use_not = use_not
@@ -273,9 +279,10 @@ class UnionLayer(nn.Module):
         self.dim2id = None
         self.rule_list = None
         self.rule_name = None
+        self.threshold = threshold
 
-        self.con_layer = ConjunctionLayer(self.n, self.input_dim, use_not=use_not, estimated_grad=estimated_grad)
-        self.dis_layer = DisjunctionLayer(self.n, self.input_dim, use_not=use_not, estimated_grad=estimated_grad)
+        self.con_layer = ConjunctionLayer(self.n, self.input_dim, use_not=use_not, estimated_grad=estimated_grad, threshold=threshold)
+        self.dis_layer = DisjunctionLayer(self.n, self.input_dim, use_not=use_not, estimated_grad=estimated_grad, threshold=threshold)
 
     def forward(self, x):
         return torch.cat([self.con_layer(x), self.dis_layer(x)], dim=1)
@@ -290,7 +297,7 @@ class UnionLayer(nn.Module):
 
     def get_rules(self, prev_layer, skip_connect_layer):
         self.con_layer.forward_tot = self.dis_layer.forward_tot = self.forward_tot
-        self.con_layer.node_activation_cnt = self.dis_layer.node_activation_cnt = self.node_activation_cnt
+        self.con_layer.node_activation_cnt = self.dis_layer.node_activation_cnt = self.node_activation_cnt # 왜 뭉뚱그림?
 
         con_dim2id, con_rule_list = extract_rules(prev_layer, skip_connect_layer, self.con_layer)
         dis_dim2id, dis_rule_list = extract_rules(prev_layer, skip_connect_layer, self.dis_layer, self.con_layer.W.shape[0])

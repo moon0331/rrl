@@ -5,7 +5,7 @@ from sklearn.impute import SimpleImputer
 
 
 def read_info(info_path):
-    with open(info_path) as f:
+    with open(info_path, encoding='utf-8-sig') as f: # utf8 add
         f_list = []
         for line in f:
             tokens = line.strip().split()
@@ -13,16 +13,27 @@ def read_info(info_path):
     return f_list[:-1], int(f_list[-1][-1])
 
 
-def read_csv(data_path, info_path, shuffle=False):
-    D = pd.read_csv(data_path, header=None)
-    if shuffle:
-        D = D.sample(frac=1, random_state=0).reset_index(drop=True)
-    f_list, label_pos = read_info(info_path)
-    f_df = pd.DataFrame(f_list)
-    D.columns = f_df.iloc[:, 0]
-    y_df = D.iloc[:, [label_pos]]
-    X_df = D.drop(D.columns[label_pos], axis=1)
-    f_df = f_df.drop(f_df.index[label_pos])
+def read_csv(data_path, info_path, shuffle=False, is_baseball=False): #아님 걍 if baseball else __ 로 수정?
+    if is_baseball:
+        D = pd.read_csv(data_path, header=0, encoding='utf-8-sig') # D columns have all features. should be deleted in this line. 전 코드 전처리부분 냅다 붙이기
+        f_list, label_pos = read_info(info_path)
+        f_df = pd.DataFrame(f_list)
+        select_columns = f_df.iloc[:, 0]
+        D = D[['GMKEY'] + select_columns.tolist()]
+        D = D[D['승패(홈기준)'] != 0.5]
+        y_df = D.iloc[:, [label_pos]]
+        X_df = D.drop(D.columns[label_pos], axis=1)
+        f_df = f_df.drop(f_df.index[label_pos])
+    else:
+        D = pd.read_csv(data_path, header=None)
+        if shuffle:
+            D = D.sample(frac=1, random_state=0).reset_index(drop=True)
+        f_list, label_pos = read_info(info_path)
+        f_df = pd.DataFrame(f_list)
+        D.columns = f_df.iloc[:, 0] # 이 컬럼을 옮기는 작업이 진짜 필요한지? (GMKEY 임시 포함?)
+        y_df = D.iloc[:, [label_pos]]
+        X_df = D.drop(D.columns[label_pos], axis=1)
+        f_df = f_df.drop(f_df.index[label_pos])
     return X_df, y_df, f_df, label_pos
 
 
@@ -49,6 +60,7 @@ class DBEncoder:
         if not continuous_data.empty:
             continuous_data = continuous_data.replace(to_replace=r'.*\?.*', value=np.nan, regex=True)
             continuous_data = continuous_data.astype(np.float)
+            # continuous_data = continuous_data.apply(lambda x: float(x.split()[0]))
         return discrete_data, continuous_data
 
     def fit(self, X_df, y_df):
@@ -56,7 +68,8 @@ class DBEncoder:
         y_df = y_df.reset_index(drop=True)
         discrete_data, continuous_data = self.split_data(X_df)
         self.label_enc.fit(y_df)
-        self.y_fname = list(self.label_enc.get_feature_names(y_df.columns)) if self.y_one_hot else y_df.columns
+        # self.y_fname = list(self.label_enc.get_feature_names(y_df.columns)) if self.y_one_hot else y_df.columns
+        self.y_fname = list(self.label_enc.get_feature_names_out(y_df.columns)) if self.y_one_hot else y_df.columns
 
         if not continuous_data.empty:
             # Use mean as missing value for continuous columns if do not discretize them.
@@ -65,7 +78,8 @@ class DBEncoder:
             # One-hot encoding
             self.feature_enc.fit(discrete_data)
             feature_names = discrete_data.columns
-            self.X_fname = list(self.feature_enc.get_feature_names(feature_names))
+            # self.X_fname = list(self.feature_enc.get_feature_names(feature_names))
+            self.X_fname = list(self.feature_enc.get_feature_names_out(feature_names))
             self.discrete_flen = len(self.X_fname)
             if not self.discrete:
                 self.X_fname.extend(continuous_data.columns)
@@ -88,7 +102,7 @@ class DBEncoder:
             continuous_data = pd.DataFrame(self.imp.transform(continuous_data.values),
                                            columns=continuous_data.columns)
             if normalized:
-                if keep_stat:
+                if keep_stat: # store mean and std for all columns
                     self.mean = continuous_data.mean()
                     self.std = continuous_data.std()
                 continuous_data = (continuous_data - self.mean) / self.std
