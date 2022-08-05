@@ -7,9 +7,9 @@ do
             struct=${bound}@${layer}
             for lr in 5e-4 2e-4 1e-4
             do
-                for regterm in 1e-3 1e-4 1e-5 1e-6
+                for regterm in 1e-3 1e-4 1e-5 1e-6 0
                 do
-                    echo python experiment.py -lr $lr -s $struct -e $epoch -r 2.0 -wd $regterm
+                    echo python experiment.py -lr $lr -s $struct -e $epoch -r 2.0 -wd $regterm -i 1
                     python experiment.py -lr $lr -s $struct -e $epoch -r 2.0 -wd $regterm -i 1
                     # fix range -2 to 2
                 done

@@ -13,13 +13,13 @@ def read_info(info_path):
     return f_list[:-1], int(f_list[-1][-1])
 
 
-def read_csv(data_path, info_path, shuffle=False, is_baseball=False): #아님 걍 if baseball else __ 로 수정?
+def read_csv(data_path, info_path, shuffle=False, is_baseball=False, ranges=None): #아님 걍 if baseball else __ 로 수정?
     if is_baseball:
         D = pd.read_csv(data_path, header=0, encoding='utf-8-sig') # D columns have all features. should be deleted in this line. 전 코드 전처리부분 냅다 붙이기
         f_list, label_pos = read_info(info_path)
         f_df = pd.DataFrame(f_list)
         select_columns = f_df.iloc[:, 0]
-        D = D[['GMKEY'] + select_columns.tolist()]
+        D = D[D.GMKEY.str.startswith(ranges)][['GMKEY'] + select_columns.tolist()]
         D = D[D['승패(홈기준)'] != 0.5]
         y_df = D.iloc[:, [label_pos]]
         X_df = D.drop(D.columns[label_pos], axis=1)

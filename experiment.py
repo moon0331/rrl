@@ -60,22 +60,30 @@ def get_data_loader(dataset, batch_size, k=0, pin_memory=False, save_best=True, 
 def get_baseball_data_loader(dataset, batch_size, pin_memory=False):
     data_path = os.path.join(DATA_DIR, dataset + '.data')
     info_path = os.path.join(DATA_DIR, dataset + '.info')
-    X_df, y_df, f_df, label_pos = read_csv(data_path, info_path, shuffle=False, is_baseball=True) # include GMKEY
+    ranges_dict = {
+        'train': list(map(str, range(2013, 2019+1))),
+        'valid': ['2020'],
+        'test': ['2021']
+    }
+    ranges = tuple(sum([ranges_dict[key] for key in ['train', 'valid', 'test']], []))
+    X_df, y_df, f_df, label_pos = read_csv(data_path, info_path, shuffle=False, is_baseball=True, ranges=ranges) # include GMKEY
 
     db_enc = DBEncoder(f_df, discrete=False)
     db_enc.fit(X_df.drop(columns='GMKEY'), y_df)
 
     X, y = db_enc.transform(X_df.drop(columns='GMKEY'), y_df, normalized=True, keep_stat=True) # not include GMKEY
 
-    _train_year_range = tuple(map(str, range(2013, 2019+1))) # ('2013', '2014', '2015', '2016', '2017', '2018', '2019')
+    _train_year_range = tuple(ranges_dict['train']) # ('2013', '2014', '2015', '2016', '2017', '2018', '2019')
     X_train = X[X_df.GMKEY.str.startswith(_train_year_range)]
     y_train = y[X_df.GMKEY.str.startswith(_train_year_range)]
 
-    X_valid = X[X_df.GMKEY.str.startswith('2020')]
-    y_valid = y[X_df.GMKEY.str.startswith('2020')]
+    _valid_year_range = tuple(ranges_dict['valid']) # ('2020')
+    X_valid = X[X_df.GMKEY.str.startswith(_valid_year_range)]
+    y_valid = y[X_df.GMKEY.str.startswith(_valid_year_range)]
 
-    X_test = X[X_df.GMKEY.str.startswith('2021')] # testset의 정의
-    y_test = y[X_df.GMKEY.str.startswith('2021')]
+    _test_year_range = tuple(ranges_dict['test']) # ('2021')
+    X_test = X[X_df.GMKEY.str.startswith(_test_year_range)] # testset의 정의
+    y_test = y[X_df.GMKEY.str.startswith(_test_year_range)]
 
     train_set = TensorDataset(torch.tensor(X_train.astype(np.float32)), torch.tensor(y_train.astype(np.float32)))
     valid_set = TensorDataset(torch.tensor(X_valid.astype(np.float32)), torch.tensor(y_valid.astype(np.float32)))

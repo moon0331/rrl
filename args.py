@@ -52,7 +52,7 @@ rrl_args.set_folder_path = os.path.join('log_folder', rrl_args.data_set)
 if not os.path.exists(rrl_args.set_folder_path):
     os.mkdir(rrl_args.set_folder_path)
 rrl_args.folder_path = os.path.join(rrl_args.set_folder_path, rrl_args.folder_name)
-print(rrl_args.folder_path)
+# print(rrl_args.folder_path)
 if not os.path.exists(rrl_args.folder_path):
     # os.mkdir(rrl_args.folder_path)
     os.makedirs(rrl_args.folder_path, exist_ok=True)
