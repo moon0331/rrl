@@ -21,6 +21,7 @@ parser.add_argument('-ma', '--master_address', type=str, default='127.0.0.1', he
 parser.add_argument('-mp', '--master_port', type=str, default='12345', help='Set the master port.')
 parser.add_argument('-li', '--log_iter', type=int, default=50, help='The number of iterations (batches) to log once.')
 parser.add_argument('-t', '--threshold', type=float, default=0.5, help='Threshold value used in binarized_forward')
+parser.add_argument('-r', '--range', type=float, default=3.0, help='range for binarization layer')
 
 parser.add_argument('--use_not', action="store_true",
                     help='Use the NOT (~) operator in logical rules. '
@@ -35,16 +36,18 @@ parser.add_argument('-s', '--structure', type=str, default='5@100', # '5@64@32'
 
 rrl_args = parser.parse_args()
 # rrl_args.folder_name = '{}_e{}_bs{}_lr{}_lrdr{}_lrde{}_wd{}_ki{}_rc{}_useNOT{}_saveBest{}_estimatedGrad{}'.format(
-rrl_args.folder_name = '{}/e{}_bs{}_lr{}_lrdr{}_lrde{}/wd{}_ki{}_rc{}/useNOT{}/saveBest{}_estimatedGrad{}'.format(
+rrl_args.folder_name = '{}/e{}_bs{}_lr{}_lrdr{}_lrde{}/wd{}_ki{}_rc{}/useNOT{}/saveBest{}/estimatedGrad{}/L{}/threshold{}/range{}'.format(
 # rrl_args.folder_name = '{}_e{}_bs{}_lr{}_lrdr{}_lrde{}_wd{}_ki{}_rc{}_useNOT{}_saveBest{}_estimatedGrad{}______'.format(
     rrl_args.data_set, rrl_args.epoch, rrl_args.batch_size, rrl_args.learning_rate, rrl_args.lr_decay_rate,
     rrl_args.lr_decay_epoch, rrl_args.weight_decay, rrl_args.ith_kfold, rrl_args.round_count, rrl_args.use_not,
-    rrl_args.save_best, rrl_args.estimated_grad)
+    rrl_args.save_best, rrl_args.estimated_grad, 
+    rrl_args.structure, rrl_args.threshold, rrl_args.range
+)
 
 if not os.path.exists('log_folder'):
     os.mkdir('log_folder')
-rrl_args.folder_name = rrl_args.folder_name + '_L' + rrl_args.structure
-rrl_args.folder_name += f'_threshold{rrl_args.threshold}'
+# rrl_args.folder_name = rrl_args.folder_name + '_L' + rrl_args.structure
+# rrl_args.folder_name += f'_threshold{rrl_args.threshold}_range{rrl_args.range}'
 rrl_args.set_folder_path = os.path.join('log_folder', rrl_args.data_set)
 if not os.path.exists(rrl_args.set_folder_path):
     os.mkdir(rrl_args.set_folder_path)

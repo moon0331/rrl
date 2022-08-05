@@ -36,8 +36,9 @@ class BinarizeLayer(nn.Module):
         self.layer_type = 'binarization'
         self.dim2id = {i: i for i in range(self.output_dim)}
 
-        self.register_buffer('left', left)
-        self.register_buffer('right', right)
+        if left is not None and right is not None:
+            self.register_buffer('left', left if left is None else torch.tensor(left, dtype=torch.float32))
+            self.register_buffer('right', right if right is None else torch.tensor(right, dtype=torch.float32))
 
         if self.input_dim[1] > 0: # has continuous value
             if self.left is not None and self.right is not None:
@@ -226,7 +227,7 @@ def extract_rules(prev_layer, skip_connect_layer, layer, pos_shift=0):
     for ri, row in enumerate(Wb): # ri번째 node와 연결된 weight를 살펴보자
         if layer.node_activation_cnt[ri + pos_shift] == 0 or layer.node_activation_cnt[ri + pos_shift] == layer.forward_tot: # 노드가 죽었거나 전체 다 통과하거나
             dim2id[ri + pos_shift] = -1
-            print(ri + pos_shift, 'is dead')
+            # print(ri + pos_shift, 'is dead')
             continue
         rule = {}
         bound = {}

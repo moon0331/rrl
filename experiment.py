@@ -122,7 +122,7 @@ def train_model(gpu, args):
     #     is_rank0 = False
 
     writer = SummaryWriter(args.folder_path)
-    is_rank0 = True
+    # is_rank0 = True
 
     dataset = args.data_set
     if args.data_set == 'baseball':
@@ -139,12 +139,15 @@ def train_model(gpu, args):
     rrl = RRL(dim_list=[(discrete_flen, continuous_flen)] + list(map(int, args.structure.split('@'))) + [len(y_fname)],
               device_id=device_id,
               use_not=args.use_not,
-              is_rank0=is_rank0,
+              is_rank0=True,
               log_file=args.log,
               writer=writer,
               save_best=args.save_best,
               estimated_grad=args.estimated_grad,
-              save_path=args.model)
+              save_path=args.model,
+              left=-args.range,
+              right=args.range
+              )
 
     rrl.train_model(
         data_loader=train_loader,
@@ -157,7 +160,7 @@ def train_model(gpu, args):
         log_iter=args.log_iter)
 
 
-def load_model(path, device_id, log_file=None, distributed=True):
+def load_model(path, device_id, log_file=None, left=None, right=None, distributed=True):
     checkpoint = torch.load(path, map_location='cpu')
     saved_args = checkpoint['rrl_args']
     rrl = RRL(
@@ -166,8 +169,11 @@ def load_model(path, device_id, log_file=None, distributed=True):
         is_rank0=True,
         use_not=saved_args['use_not'],
         log_file=log_file,
+        left=left,
+        right=right,
         distributed=distributed,
-        estimated_grad=saved_args['estimated_grad'])
+        estimated_grad=saved_args['estimated_grad']
+    )
     stat_dict = checkpoint['model_state_dict']
     # for key in list(stat_dict.keys()):
     #     # remove 'module.' prefix
@@ -177,7 +183,7 @@ def load_model(path, device_id, log_file=None, distributed=True):
 
 
 def test_model(args, test_model=None):
-    rrl = load_model(args.model, args.device_ids[0], log_file=args.test_res, distributed=False)
+    rrl = load_model(args.model, args.device_ids[0], log_file=args.test_res, left=-args.range, right=args.range, distributed=False)
     dataset = args.data_set
     if args.data_set == 'baseball':
         db_enc, train_loader, valid_loader, test_loader = get_baseball_data_loader(dataset, args.batch_size, pin_memory=True)
@@ -190,7 +196,7 @@ def test_model(args, test_model=None):
 
         # test_loader = get_test_loader(dataset, args.batch_size) # redefine
     
-    rrl.test(test_loader=test_loader, set_name='Test')
+    rrl.test(test_loader=test_loader, set_name='Test', fname=args.rrl_file.replace('/rrl.csv', ''))
     with open(args.rrl_file, 'w', encoding='utf-8-sig') as rrl_file:
         rrl.rule_print(db_enc.X_fname, db_enc.y_fname, train_loader, file=rrl_file, mean=db_enc.mean, std=db_enc.std)
 
@@ -209,4 +215,3 @@ if __name__ == '__main__':
     print('train', rrl_args.data_set, rrl_args.epoch, rrl_args.structure)
     train_main(rrl_args)
     test_model(rrl_args)
-    print('end')

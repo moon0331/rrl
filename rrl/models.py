@@ -155,7 +155,7 @@ class RRL:
         avg_batch_loss_mllp = 0.0
         avg_batch_loss_rrl = 0.0
         epoch_histc = defaultdict(list)
-        for epo in tqdm(range(epoch)):
+        for epo in tqdm(range(epoch), ncols=100):
             # print(epo)
             optimizer = self.exp_lr_scheduler(optimizer, epo, init_lr=lr, lr_decay_rate=lr_decay_rate,
                                               lr_decay_epoch=lr_decay_epoch)
@@ -237,7 +237,7 @@ class RRL:
             self.save_model()
         return epoch_histc
 
-    def test(self, X=None, y=None, test_loader=None, batch_size=32, need_transform=True, set_name='Validation'):
+    def test(self, X=None, y=None, test_loader=None, batch_size=32, need_transform=True, set_name='Validation', fname=None):
         if X is not None and y is not None and need_transform:
             X, y = self.data_transform(X, y)
         with torch.no_grad():
@@ -284,7 +284,9 @@ class RRL:
                 set_name, metrics.confusion_matrix(y_true, y_pred_b_arg), metrics.classification_report(y_true, y_pred_b_arg)))
             logging.info('-' * 60)
             if set_name == 'Test':
-                print(set_name, accuracy_b, f1_score_b)
+                print(set_name, f'acc {accuracy_b*100:.2f}, f1 {f1_score_b:.4f}')
+                with open(f'{fname}/acc={accuracy_b*100:.2f},f1={f1_score_b:.4f}', 'w') as f:
+                    pass # 빈 파일로 acc와 f1만 체크
         return accuracy, accuracy_b, f1_score, f1_score_b
 
     def save_model(self):
