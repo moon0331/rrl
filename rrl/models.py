@@ -16,7 +16,7 @@ TEST_CNT_MOD = 500
 
 
 class MLLP(nn.Module):
-    def __init__(self, dim_list, use_not=False, left=None, right=None, estimated_grad=False, threshold=0.5):
+    def __init__(self, dim_list, use_not=False, left=None, right=None, estimated_grad=False, threshold=0.5): # fixed_bin_space=False
         super(MLLP, self).__init__()
 
         self.dim_list = dim_list
@@ -35,7 +35,7 @@ class MLLP(nn.Module):
             # print(f'{i=}, {dim_list[i]=}')
 
             if i == 1:
-                layer = BinarizeLayer(dim_list[i], num, self.use_not, self.left, self.right)
+                layer = BinarizeLayer(dim_list[i], num, self.use_not, self.left, self.right) # fixed_bin_space=fixed_bin_space (binarization을 같은 간격으로 고정)
                 layer_name = 'binary{}'.format(i)
             elif i == len(dim_list) - 1:
                 layer = LRLayer(dim_list[i], num)
@@ -82,7 +82,7 @@ class MyDistributedDataParallel(torch.nn.parallel.DistributedDataParallel):
 
 class RRL:
     def __init__(self, dim_list, device_id, use_not=False, is_rank0=False, log_file=None, writer=None, left=None,
-                 right=None, save_best=False, estimated_grad=False, save_path=None, distributed=False, threshold=0.5): #distributed=True
+                 right=None, save_best=False, estimated_grad=False, save_path=None, distributed=False, threshold=0.5): #distributed=True, fixed_bin_space=False
         super(RRL, self).__init__()
         self.dim_list = dim_list
         self.use_not = use_not
@@ -104,7 +104,7 @@ class RRL:
                 logging.basicConfig(level=logging.DEBUG, filename=log_file, filemode='w', format=log_format)
         self.writer = writer
 
-        self.net = MLLP(dim_list, use_not=use_not, left=left, right=right, estimated_grad=estimated_grad, threshold=threshold)
+        self.net = MLLP(dim_list, use_not=use_not, left=left, right=right, estimated_grad=estimated_grad, threshold=threshold) # fixed_bin_space=fixed_bin_space
 
         self.net.cuda(self.device_id)
         if distributed:

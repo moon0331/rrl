@@ -42,6 +42,7 @@ for acc_f1_file in tqdm(glob.glob('log_folder/baseball/baseball/e*/*/*/*/*/*/*/*
             rule_df = rrl_file['Rule'].str.count(r'>|<')
             parsed_result['num_rule'] = rule_df.size
             parsed_result['avg_rule'] = rule_df.mean().round(2)
+            
             parsed_result['std_rule'] = rule_df.std().round(2)
             parsed_result['max_rule'] = rule_df.max()
         else:

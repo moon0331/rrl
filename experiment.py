@@ -156,6 +156,7 @@ def train_model(gpu, args):
               left=-args.range,
               right=args.range
               )
+              # fixed_bin_space=True
 
     rrl.train_model(
         data_loader=train_loader,
@@ -181,7 +182,7 @@ def load_model(path, device_id, log_file=None, left=None, right=None, distribute
         right=right,
         distributed=distributed,
         estimated_grad=saved_args['estimated_grad']
-    )
+    ) # fixed_bin_space=True
     stat_dict = checkpoint['model_state_dict']
     # for key in list(stat_dict.keys()):
     #     # remove 'module.' prefix

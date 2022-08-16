@@ -23,7 +23,7 @@ class Binarize(torch.autograd.Function):
 class BinarizeLayer(nn.Module):
     """Implement the feature discretization and binarization."""
 
-    def __init__(self, n, input_dim, use_not=False, left=None, right=None):
+    def __init__(self, n, input_dim, use_not=False, left=None, right=None): # fixed_bin_space=False,
         super(BinarizeLayer, self).__init__()
         self.n = n
         self.input_dim = input_dim # (discrete_flen, continuous_flen)
@@ -44,6 +44,7 @@ class BinarizeLayer(nn.Module):
             if self.left is not None and self.right is not None:
                 cl = self.left + torch.rand(self.n, self.input_dim[1]) * (self.right - self.left)
                 cr = self.left + torch.rand(self.n, self.input_dim[1]) * (self.right - self.left)
+            # elif if fixed_bin_space: cl = torch.linspace를 통해 cl, cr shape 맞게 생성, 나머지 메서드도 호환되도록 작성 
             else:
                 cl = 3. * (2. * torch.rand(self.n, self.input_dim[1]) - 1.)
                 cr = 3. * (2. * torch.rand(self.n, self.input_dim[1]) - 1.)
